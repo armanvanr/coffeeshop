@@ -1,8 +1,8 @@
-"""db initiation
+"""create menu model
 
-Revision ID: 3f72e2e01382
+Revision ID: ade86f92b4de
 Revises: 
-Create Date: 2023-06-21 13:05:01.745672
+Create Date: 2023-06-21 13:41:21.637164
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '3f72e2e01382'
+revision = 'ade86f92b4de'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -25,6 +25,7 @@ def upgrade():
     sa.Column('price', sa.Integer(), nullable=False),
     sa.Column('stock', sa.SmallInteger(), nullable=False),
     sa.Column('img_url', sa.String(), nullable=False),
+    sa.Column('category', sa.String(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     with op.batch_alter_table('menu', schema=None) as batch_op:
