@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from dotenv import load_dotenv
 from os import environ
 from flask_migrate import Migrate
+from flask_bcrypt import Bcrypt
 
 load_dotenv()
 db_username = environ["USER_NAME"]
@@ -14,6 +15,7 @@ app.config[
 ] = f"postgresql://{db_username}:{db_password}@localhost:5432/coffeeshop"
 
 db = SQLAlchemy(app)
+bcrypt = Bcrypt(app)
 migrate = Migrate(app, db)
 
 
@@ -88,6 +90,38 @@ class Balance_Record(db.Model):
 @app.get("/")
 def welcome():
     return {"message": "Welcome to Coffee Shop API"}
+
+
+@app.get("/users")
+def get_users():
+    data = [
+        {
+            "name": user.name,
+            "id": user.id,
+            "balance": user.balance,
+            "email": user.email,
+            "role": user.role,
+        }
+        for user in User.query.all()
+    ]
+    return {"message": data}, 200
+
+
+@app.post("/user")
+def register():
+    data = request.get_json()
+    user = User.query.filter_by(email=data["email"]).first()
+    if user:
+        return {"message": "Email already exists"}, 400
+    new_user = User(
+        name=data["name"],
+        email=data["email"],
+        password=bcrypt.generate_password_hash(data["password"]).decode("utf-8"),
+        role=data["role"],
+    )
+    db.session.add(new_user)
+    db.session.commit()
+    return {"message": "Account successfully created"}, 201
 
 
 @app.post("/menu")
