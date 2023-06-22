@@ -46,6 +46,7 @@ class Order(db.Model):
     status = db.Column(db.String, nullable=False)
     created_date = db.Column(db.DateTime, nullable=False)
     completed_date = db.Column(db.DateTime, nullable=True)
+    cancelled_date = db.Column(db.DateTime, nullable=True)
     order_items = db.relationship("Order_Items", backref="order")
 
     def __repr__(self):
@@ -377,7 +378,7 @@ def complete_order_member(o_id):
 
     # reduce balance
     user.balance -= order.total_bill
-    
+
     # insert balance transaction
     new_record = Balance_Record(
         user_id=user.id,
@@ -395,6 +396,39 @@ def complete_order_member(o_id):
         "data": {},
     }, 200
 
+# cancel order
+@app.delete("/order/member/<int:o_id>")
+@auth.login_required(role="member")
+def cancel_order_member(o_id):
+    order = Order.query.get(o_id)
+    user = auth.current_user()
+    order.status = "cancelled"
+    order.cancelled_date = datetime.now()
+
+    # re-stock
+    for item in order.order_items:
+        menu = Menu.query.get(item.menu_id)
+        menu.stock += item.quantity
+
+    # refund
+    user.balance += (0.8*order.total_bill)
+
+    # insert balance transaction
+    new_record = Balance_Record(
+        user_id=user.id,
+        order_id=order.id,
+        nominal=0.8*order.total_bill,
+        completed_date=datetime.now(),
+        status="completed",
+        type="refund",
+    )
+    db.session.add(new_record)
+    db.session.commit()
+    return {
+        "success": True,
+        "message": "Order cancelled",
+        "data": {},
+    }, 200
 
 # balance top-up
 @app.post("/balance/topup")
@@ -430,7 +464,7 @@ def create_top_up():
 def complete_top_up(b_id):
     record = Balance_Record.query.get(b_id)
     user = User.query.get(record.user_id)
-    user.balance = record.nominal
+    user.balance += record.nominal
     record.completed_date = datetime.now()
     record.status = "completed"
     db.session.commit()
