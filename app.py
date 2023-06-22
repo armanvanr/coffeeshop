@@ -1,5 +1,6 @@
 from flask import Flask, request
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import func
 from dotenv import load_dotenv
 from os import environ
 from flask_migrate import Migrate
@@ -347,7 +348,7 @@ def get_order(o_id):
             {"name": item.menu_name, "qty": item.quantity} for item in order.order_items
         ],
         "total_bill": order.total_bill,
-        "status": order.status
+        "status": order.status,
     }
     return {
         "success": True,
@@ -396,6 +397,7 @@ def complete_order_member(o_id):
         "data": {},
     }, 200
 
+
 # cancel order
 @app.delete("/order/member/<int:o_id>")
 @auth.login_required(role="member")
@@ -411,13 +413,13 @@ def cancel_order_member(o_id):
         menu.stock += item.quantity
 
     # refund
-    user.balance += (0.8*order.total_bill)
+    user.balance += 0.8 * order.total_bill
 
     # insert balance transaction
     new_record = Balance_Record(
         user_id=user.id,
         order_id=order.id,
-        nominal=0.8*order.total_bill,
+        nominal=0.8 * order.total_bill,
         completed_date=datetime.now(),
         status="completed",
         type="refund",
@@ -429,6 +431,7 @@ def cancel_order_member(o_id):
         "message": "Order cancelled",
         "data": {},
     }, 200
+
 
 # balance top-up
 @app.post("/balance/topup")
@@ -472,6 +475,75 @@ def complete_top_up(b_id):
         "success": True,
         "message": "Top-up completed",
         "data": {},
+    }, 200
+
+
+@app.get("/top5menu")
+@auth.login_required(role=["member", "cashier"])
+def show_top_menu():
+    menu_items = (
+        db.session.query(
+            Order_Items.menu_name, func.sum(Order_Items.quantity).label("qty")
+        )
+        .join(Order, Order.id == Order_Items.order_id)
+        .filter(Order.status == "completed")
+        .group_by(Order_Items.menu_name)
+        .order_by(func.sum(Order_Items.quantity).desc())
+        .limit(5)
+    )
+    return {
+        "success": True,
+        "message": "Data found",
+        "data": {
+            "menu": [{"name": item.menu_name, "qty": item.qty} for item in menu_items]
+        },
+    }, 200
+
+
+@app.get("/top5users")
+@auth.login_required(role=["admin", "cashier"])
+def show_top_user():
+    # users = (
+    #     db.session.query(
+    #         Order.customer_name, func.count(Order.customer_name).label("times")
+    #     )
+    #     .filter(Order.status == "completed")
+    #     .group_by(Order.customer_name)
+    #     .order_by(func.count(Order.customer_name).desc())
+    #     .limit(5)
+    # )
+    # return {
+    #     "success": True,
+    #     "message": "Data found",
+    #     "data": {
+    #         "users": [
+    #             {
+    #                 "name": user.customer_name,
+    #                 "ordered_times": user.times,
+    #             }
+    #             for user in users
+    #         ]
+    #     },
+    # }, 200
+    users = (
+        db.session.query(Order.customer_name, func.sum(Order.total_bill).label("bill"))
+        .filter(Order.status == "completed")
+        .group_by(Order.customer_name)
+        .order_by(func.sum(Order.total_bill).desc())
+        .limit(5)
+    )
+    return {
+        "success": True,
+        "message": "Data found",
+        "data": {
+            "users": [
+                {
+                    "name": user.customer_name,
+                    "bill_sum": user.bill,
+                }
+                for user in users
+            ]
+        },
     }, 200
 
 
