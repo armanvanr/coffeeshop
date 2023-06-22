@@ -61,7 +61,7 @@ class Order_Items(db.Model):
     quantity = db.Column(db.SmallInteger, nullable=False)
 
     def __repr__(self):
-        return f"<Order-Item {self.order_id}-{self.menu_id}>"
+        return f"<Item(Qty) {self.menu_name}({self.quantity})>"
 
 
 class Menu(db.Model):
@@ -84,9 +84,11 @@ class Balance_Record(db.Model):
 
     id = db.Column(db.Integer, autoincrement=True, primary_key=True, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    order_id = db.Column(db.Integer, db.ForeignKey("order.id"), nullable=False)
+    order_id = db.Column(db.Integer, db.ForeignKey("order.id"), nullable=True)
     nominal = db.Column(db.Integer, nullable=False)
-    created_date = db.Column(db.DateTime, nullable=False)
+    created_date = db.Column(db.DateTime, nullable=True)
+    completed_date = db.Column(db.DateTime, nullable=True)
+    status = db.Column(db.String, nullable=False)
     type = db.Column(db.String, nullable=False)
 
     def __repr__(self):
@@ -169,7 +171,6 @@ def update_user():
             )
             user.password = hash_pw
     db.session.commit()
-    print(1)
     return {"success": True, "message": "Account data updated", "data": {}}, 200
 
 
@@ -202,10 +203,10 @@ def get_all_menu():
 
 
 # show a menu details
-@app.get("/menu/<int:id>")
+@app.get("/menu/<int:m_id>")
 @auth.login_required(role=["cashier", "admin"], optional=True)
-def get_menu(id):
-    menu = Menu.query.get(id)
+def get_menu(m_id):
+    menu = Menu.query.get(m_id)
     details = {
         "name": menu.name,
         "id": menu.id,
@@ -244,9 +245,9 @@ def add_menu():
 # update menu data
 @app.put("/menu/<int:id>")
 @auth.login_required(role="admin")
-def update_menu(id):
+def update_menu(m_id):
     data = request.get_json()
-    menu = Menu.query.get(id)
+    menu = Menu.query.get(m_id)
     menu.name = data.get("name", menu.name)
     menu.desc = data.get("desc", menu.desc)
     menu.price = data.get("price", menu.price)
@@ -256,11 +257,11 @@ def update_menu(id):
 
 
 # update menu stock
-@app.put("/menu/stock/<int:id>")
+@app.put("/menu/stock/<int:m_id>")
 @auth.login_required(role=["admin", "cashier"])
-def update_menu_stock(id):
+def update_menu_stock(m_id):
     data = request.get_json()
-    menu = Menu.query.get(id)
+    menu = Menu.query.get(m_id)
     menu.stock = data.get("stock", menu.stock)
     db.session.commit()
     return {"success": True, "message": "menu stock updated", "data": {}}, 200
@@ -294,9 +295,15 @@ def menu_search():
 # create order
 @app.post("/order/member")
 @auth.login_required(role=["cashier", "member"])
-def create_order():
+def create_order_member():
+    active_orders = Order.query.filter_by(status="created").count()
+    if active_orders > 10:
+        return {
+            "success": False,
+            "message": "We apologize, our service is busy at the moment 🙏🏻 Please kindly wait 😊",
+            "data": {},
+        }, 400
     items = request.get_json()["order_items"]
-    print(items)
     member = auth.current_user()
     new_order = Order(
         user_id=member.id,
@@ -316,15 +323,122 @@ def create_order():
             quantity=item["quantity"],
         )
         total_bill += menu.price * item["quantity"]
-        print("price and qty:",menu.price, item["quantity"])
         new_order.order_items.append(new_item)
-    new_order.total_bill=total_bill
-    db.session.commit()    
+    new_order.total_bill = total_bill
+    db.session.commit()
     return {
         "success": True,
         "message": "Order created",
-        "data": {},
+        "data": {"total_bill": total_bill, "order_id": new_order.id},
     }, 201
+
+
+# order details
+@app.get("/order/<int:o_id>")
+@auth.login_required(role=["member", "cashier"])
+def get_order(o_id):
+    # order = Order.query.get(o_id)
+    order = db.session.get(Order, o_id)
+    details = {
+        "order_id": order.id,
+        "created_at": order.created_date,
+        "items": [
+            {"name": item.menu_name, "qty": item.quantity} for item in order.order_items
+        ],
+        "total_bill": order.total_bill,
+        "status": order.status
+    }
+    return {
+        "success": True,
+        "message": "Data found",
+        "data": {"details": details},
+    }, 200
+
+
+# complete order
+@app.put("/order/member/<int:o_id>")
+@auth.login_required(role="member")
+def complete_order_member(o_id):
+    user = auth.current_user()
+    order = Order.query.get(o_id)
+    if user.balance < order.total_bill:
+        return {
+            "success": False,
+            "message": "Unsufficient balance",
+            "data": {},
+        }, 400
+    order.status = "completed"
+    order.completed_date = datetime.now()
+
+    # reduce stock
+    for item in order.order_items:
+        menu = Menu.query.get(item.menu_id)
+        menu.stock -= item.quantity
+
+    # reduce balance
+    user.balance -= order.total_bill
+    
+    # insert balance transaction
+    new_record = Balance_Record(
+        user_id=user.id,
+        order_id=order.id,
+        nominal=order.total_bill,
+        completed_date=datetime.now(),
+        status="completed",
+        type="payment",
+    )
+    db.session.add(new_record)
+    db.session.commit()
+    return {
+        "success": True,
+        "message": "Order completed",
+        "data": {},
+    }, 200
+
+
+# balance top-up
+@app.post("/balance/topup")
+@auth.login_required(role="member")
+def create_top_up():
+    data = request.get_json()
+    if data["nominal"] < 10000:
+        return {
+            "success": False,
+            "message": "Minimum top-up is 10000",
+            "data": {},
+        }, 400
+    user = auth.current_user()
+    new_record = Balance_Record(
+        user_id=user.id,
+        nominal=data["nominal"],
+        created_date=datetime.now(),
+        status="created",
+        type="topup",
+    )
+    db.session.add(new_record)
+    db.session.commit()
+    return {
+        "success": True,
+        "message": "Top-up created",
+        "data": {},
+    }, 200
+
+
+# balance top-up
+@app.put("/balance/topup/<int:b_id>")
+@auth.login_required(role="admin")
+def complete_top_up(b_id):
+    record = Balance_Record.query.get(b_id)
+    user = User.query.get(record.user_id)
+    user.balance = record.nominal
+    record.completed_date = datetime.now()
+    record.status = "completed"
+    db.session.commit()
+    return {
+        "success": True,
+        "message": "Top-up completed",
+        "data": {},
+    }, 200
 
 
 if __name__ == "__main__":
