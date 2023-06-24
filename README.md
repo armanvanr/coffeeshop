@@ -15,66 +15,91 @@ Coffeeverse is a RESTful API server built with Flask. Coffeeverse was designed a
 
 ## Running Application
 1. Clone repository
-```
+```bash
 $ git clone https://github.com/armanvanr/coffeeshop.git
 ```
 2. Install the required modules
  - Create virtual environment (if using VSCode)
-    ```
-    python.exe -m venv yourvenvname
-    ```
+```bash
+python.exe -m venv yourvenvname
+```
  - Activate venv
-    ```
-    yourvenvname\Scripts\activate
-    ```
+```bash
+yourvenvname\Scripts\activate
+```
  - Install the requirement
-    ```
-    $ pip install -r requirements.txt
-    ```
+```bash
+$ pip install -r requirements.txt
+```
 3. Setup Database Configurations
  - Environment variables
     In the root directory, create a `.env` file containing `USER_NAME` and `PASSWORD` of database engine
-    ```
-    # .env
-    USER_NAME = postgres #bydefault
-    PASSWORD = password123
-    ```
-    ```
-    # app.py
-    from dotenv import load_dotenv
-    from os import environ
+```dosini
+# .env
+USER_NAME = postgres #bydefault
+PASSWORD = password123
+```
+```python
+# app.py
+from dotenv import load_dotenv
+from os import environ
 
-    load_dotenv()
-    db_username = environ["USER_NAME"]
-    db_password = environ["PASSWORD"]
-    db_name = coffeeshop
-    ....
-    ```
+load_dotenv()
+db_username = environ["USER_NAME"]
+db_password = environ["PASSWORD"]
+db_name = coffeeshop
+...
+```
  - Setup Database URI
     Create a new database in the PGAdmin and put the database name at the end of URI `app.config["SQLALCHEMY_DATABASE_URI"]`
-    ```
-    # app.py
-    app = Flask(__name__)
-    app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql://{db_username}:{db_password}@localhost:5432/{db_name}"
-    ....
-    ```
+```python
+# app.py
+app = Flask(__name__)
+app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql://{db_username}:{db_password}@localhost:5432/{db_name}"
+...
+```
 4. Migrate your application by running command
  - Initiate Migration
-    ```
-    $ flask db init
-    ```
- - Add a new migration
-    ```
-    $ flask db migrate
-    ```
- - Upgrade the migration
-    ```
-    $ flask db upgrade
-    ```
-5. Start Flask App by running command
+```bash
+$ flask db init
 ```
+ - Add a new migration
+```bash
+$ flask db migrate
+```
+ - Upgrade the migration
+```bash
+$ flask db upgrade
+```
+5. Start Flask App by running command
+```bash
 $ flask run
 ```
 
 ## API Endpoints
 
+### GET
+`GET`[/users]
+`GET`[/users/top5/spend]
+`GET`[/users/top5/order]
+`GET`[/menu]
+`GET`[/menu/id]
+`GET`[/menu/search]
+`GET`[/menu/lowstock]
+`GET`[/menu/top5]
+`GET`[/orders]
+`GET`[/order/details/id]
+
+### POST
+`POST` [/user]
+`POST [/menu]`
+`POST /order/create`
+`POST/balance/topup`
+
+### PUT
+`PUT`[/user/update]
+`PUT`[/menu/id]
+`PUT`[/menu/stock/id]
+`PUT`[/order/complete/id]
+`PUT`[/order/cancel/id]
+`PUT`[/balance/topup/id]
