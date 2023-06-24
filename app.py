@@ -99,36 +99,38 @@ class Balance_Record(db.Model):
         return f"<Transaction {self.id}>"
 
 
-# Authentication and Authorization
+# Authentication
 @auth.verify_password
 def verify_password(username, password):
     user = User.query.filter_by(email=username).first()
 
-    # user with that email not found
+    # user with that email not found, call Error Auth Handler
     if not user:
         return False
 
     # check password
     is_valid = bcrypt.check_password_hash(user.password, password)
 
-    # password correct
+    # password correct, call Authorization
     if is_valid:
         return user
 
-    # password incorrect
+    # password incorrect, call Error Auth Handler
     else:
         return False
 
 
+# Authorization
 @auth.get_user_roles
 def get_user_roles(user):
     roles = user.role
     return roles
 
 
+# Auth Error Handler
 @auth.error_handler
 def error_handlers(code):
-    # handle if user not exists
+    # handle if user not exists or incorrect password
     if code == 401:
         return {"success": False, "message": "Unauthorized", "data": {}}, code
 
@@ -182,7 +184,7 @@ def add_user():
 
 # change name or password of member or admin
 @app.put("/user/update")
-@auth.login_required()
+@auth.login_required(role=["member", "admin"])
 def update_user():
     data = request.get_json()
     user = auth.current_user()
@@ -216,8 +218,7 @@ def get_all_menu():
             "id": menu.id,
             "img_url": menu.img_url,
         }
-        for menu in Menu.query.filter_by(category="drinks")
-        if menu.stock > 0
+        for menu in Menu.query.filter(Menu.category == "drinks", Menu.stock > 0)
     ]
     foods = [
         {
@@ -225,13 +226,31 @@ def get_all_menu():
             "id": menu.id,
             "img_url": menu.img_url,
         }
-        for menu in Menu.query.filter_by(category="foods")
-        if menu.stock > 0
+        for menu in Menu.query.filter(Menu.category == "foods", Menu.stock > 0)
     ]
     return {
         "success": True,
         "message": "Data found",
         "data": {"drinks": drinks, "foods": foods},
+    }, 200
+
+
+# show menu items whose stock <= 10
+@app.get("/menu/lowstock")
+@auth.login_required(role="admin")
+def get_low_stock():
+    menu = [
+        {
+            "name": item.name,
+            "id": item.id,
+            "stock": item.stock,
+        }
+        for item in Menu.query.filter(Menu.stock <= 10).order_by(Menu.stock)
+    ]
+    return {
+        "success": True,
+        "message": "Data retrieved",
+        "data": {"menu": menu},
     }, 200
 
 
@@ -301,8 +320,8 @@ def update_menu_stock(m_id):
 
 
 # search menu
-@app.get("/menusearch")
-@auth.login_required(role=["cashier", "member"], optional=True)
+@app.get("/menu/search")
+@auth.login_required(role="member")
 def menu_search():
     args = request.args
     q = Menu.query
@@ -355,7 +374,7 @@ def create_order():
         new_order.order_items.append(new_item)
     new_order.total_bill = total_bill
     active_orders = Order.query.filter_by(status="created").count()
-    if active_orders >= 2:
+    if active_orders == 10:
         new_order.status = "waiting-list"
         response_message = (
             "Order successfully created. We apologize, your order is in waiting list"
@@ -393,7 +412,7 @@ def create_order():
     }, 201
 
 
-# order details
+# see all waiting-list or in-process orders
 @app.get("/orders")
 @auth.login_required(role="admin")
 def get_orders():
@@ -480,13 +499,15 @@ def complete_order(o_id):
         menu.stock -= item.quantity
 
     # change the waiting-list into in-process
-    new_active_order = (
+    query_waiting_list = (
         Order.query.filter_by(status="waiting-list")
         .order_by(Order.created_date)
         .limit(1)
-        .all()[0]
+        .all()
     )
-    new_active_order.status = "in-process"
+    if query_waiting_list:
+        new_active_order = query_waiting_list[0]
+        new_active_order.status = "in-process"
     db.session.commit()
     return {
         "success": True,
@@ -495,7 +516,7 @@ def complete_order(o_id):
     }, 200
 
 
-# cancel order
+# cancel order and refund
 @app.put("/order/cancel/<int:o_id>")
 @auth.login_required(role="member")
 def cancel_order(o_id):
@@ -532,7 +553,7 @@ def cancel_order(o_id):
     }, 200
 
 
-# balance top-up
+# top-up balance
 @app.post("/balance/topup")
 @auth.login_required(role="member")
 def create_top_up():
@@ -561,7 +582,7 @@ def create_top_up():
     }, 200
 
 
-# balance top-up
+# approve top-up balance
 @app.put("/balance/topup/<int:b_id>")
 @auth.login_required(role="admin")
 def complete_top_up(b_id):
@@ -578,8 +599,9 @@ def complete_top_up(b_id):
     }, 200
 
 
+# show top 5 menu items ordered the most
 @app.get("/top5menu")
-@auth.login_required(role=["member", "cashier"])
+@auth.login_required(role="member")
 def show_top_menu():
     menu_items = (
         db.session.query(
@@ -595,14 +617,22 @@ def show_top_menu():
         "success": True,
         "message": "Data found",
         "data": {
-            "menu": [{"name": item.menu_name, "qty": item.qty} for item in menu_items]
+            "menu": [
+                {
+                    "name": item.menu_name,
+                    "qty": item.qty,
+                    #   "id": item.id
+                }
+                for item in menu_items
+            ]
         },
     }, 200
 
 
+# show top 5 users highest spend
 @app.get("/users/top5/spend")
-@auth.login_required(role=["admin", "cashier"])
-def show_top_user_order():
+@auth.login_required(role="admin")
+def show_top_user_spend():
     users = (
         db.session.query(Order.customer_name, func.sum(Order.total_bill).label("bill"))
         .filter(Order.status == "completed")
@@ -616,6 +646,7 @@ def show_top_user_order():
         "data": {
             "users": [
                 {
+                    "id": user.id,
                     "name": user.customer_name,
                     "bill_sum": user.bill,
                 }
@@ -625,8 +656,10 @@ def show_top_user_order():
     }, 200
 
 
+# show top 5 users most frequently create orders
 @app.get("/users/top5/order")
-def show_top_user_spend():
+@auth.login_required(role="admin")
+def show_top_user_order():
     users = (
         db.session.query(
             Order.customer_name, func.count(Order.customer_name).label("times")
@@ -642,6 +675,7 @@ def show_top_user_spend():
         "data": {
             "users": [
                 {
+                    "id": user.id,
                     "name": user.customer_name,
                     "ordered_times": user.times,
                 }
