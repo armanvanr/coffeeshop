@@ -1,5 +1,6 @@
 .env
 
-data.py
+# sample_data.py
+# query.sql
 
 venv/
