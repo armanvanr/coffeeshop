@@ -79,27 +79,25 @@ $ flask run
 ## API Endpoints
 
 ### GET
-`GET`[/users]
-`GET`[/users/top5/spend]
-`GET`[/users/top5/order]
-`GET`[/menu]
-`GET`[/menu/id]
-`GET`[/menu/search]
-`GET`[/menu/lowstock]
-`GET`[/menu/top5]
-`GET`[/orders]
-`GET`[/order/details/id]
-
+`GET` [/users/all](#get-users) <br/>
+`GET` [/users/top5/spend](#get-users-top5-spend) <br/>
+`GET` [/users/top5/order](#get-users-top5-order) <br/>
+`GET` [/menu/all](#get-menu) <br/>
+`GET` [/menu/id](#get-menu-id) <br/>
+`GET` [/menu/search](#get-menu-search) <br/>
+`GET` [/menu/lowstock](#get-menu-lowstock) <br/>
+`GET` [/menu/top5](#get-menu-top5) <br/>
+`GET` [/orders/created](#get-orders-created) <br/>
+`GET` [/order/details/id](#get-order-details-id) <br/>
 ### POST
-`POST` [/user]
-`POST [/menu]`
-`POST /order/create`
-`POST/balance/topup`
-
+`POST` [/user](#post-user) <br/>
+`POST` [/menu](#post-menu) <br/>
+`POST` [/order/create](#post-order-create) <br/>
+`POST` [/balance/topup](#post-balance-topup) <br/>
 ### PUT
-`PUT`[/user/update]
-`PUT`[/menu/id]
-`PUT`[/menu/stock/id]
-`PUT`[/order/complete/id]
-`PUT`[/order/cancel/id]
-`PUT`[/balance/topup/id]
+`PUT` [/user/update](#put-user-update) <br/>
+`PUT` [/menu/id](#put-menu-id) <br/>
+`PUT` [/menu/stock/id](#put-stock-id) <br/>
+`PUT` [/order/complete/id](#put-order-complete-id) <br/>
+`PUT` [/order/cancel/id](#put-order-cancel-id) <br/>
+`PUT` [/balance/topup/id](#put-balance-topup-id) <br/>
