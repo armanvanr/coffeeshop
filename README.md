@@ -79,30 +79,30 @@ $ flask run
 ## API Endpoints
 
 ## GET
-`GET` [/users/all](#get-users) <br/>
-`GET` [/users/top5/spend](#get-users-top5-spend) <br/>
-`GET` [/users/top5/order](#get-users-top5-order) <br/>
+`GET` [/users/all](#get-usersall) <br/>
+`GET` [/users/top5/spend](#get-userstop5spend) <br/>
+`GET` [/users/top5/order](#get-userstop5order) <br/>
 `GET` [/menu/all](#get-menu) <br/>
-`GET` [/menu/id](#get-menu-id) <br/>
-`GET` [/menu/search](#get-menu-search) <br/>
-`GET` [/menu/lowstock](#get-menu-lowstock) <br/>
-`GET` [/menu/top5](#get-menu-top5) <br/>
-`GET` [/orders/created](#get-orders-created) <br/>
-`GET` [/order/details/id](#get-order-details-id) <br/>
+`GET` [/menu/id](#get-menuid) <br/>
+`GET` [/menu/search](#get-menusearch) <br/>
+`GET` [/menu/lowstock](#get-menulowstock) <br/>
+`GET` [/menu/top5](#get-menutop5) <br/>
+`GET` [/orders/created](#get-orderscreated) <br/>
+`GET` [/order/details/id](#get-orderdetailsid) <br/>
 
 ## POST
 `POST` [/user](#post-user) <br/>
 `POST` [/menu](#post-menu) <br/>
-`POST` [/order/create](#post-order-create) <br/>
-`POST` [/balance/topup](#post-balance-topup) <br/>
+`POST` [/order/create](#post-ordercreate) <br/>
+`POST` [/balance/topup](#post-balancetopup) <br/>
 
 ## PUT
-`PUT` [/user/update](#put-user-update) <br/>
-`PUT` [/menu/id](#put-menu-id) <br/>
-`PUT` [/menu/stock/id](#put-stock-id) <br/>
-`PUT` [/order/complete/id](#put-order-complete-id) <br/>
-`PUT` [/order/cancel/id](#put-order-cancel-id) <br/>
-`PUT` [/balance/topup/id](#put-balance-topup-id) <br/>
+`PUT` [/user/update](#put-userupdate) <br/>
+`PUT` [/menu/id](#put-menuid) <br/>
+`PUT` [/menu/stock/id](#put-stockid) <br/>
+`PUT` [/order/complete/id](#put-ordercompleteid) <br/>
+`PUT` [/order/cancel/id](#put-ordercancelid) <br/>
+`PUT` [/balance/topup/id](#put-balancetopupid) <br/>
 
 ### GET /users/all
 Show all users. Can only be accessed by `admins`.
