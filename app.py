@@ -23,6 +23,7 @@ migrate = Migrate(app, db)
 auth = HTTPBasicAuth(app)
 
 
+# Model of Tables and Relationships
 class User(db.Model):
     __tablename__ = "user"
 
@@ -86,6 +87,7 @@ class Balance_Record(db.Model):
 
     id = db.Column(db.Integer, autoincrement=True, primary_key=True, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    member_name = db.Column(db.String, nullable=True)
     order_id = db.Column(db.Integer, db.ForeignKey("order.id"), nullable=True)
     nominal = db.Column(db.Integer, nullable=False)
     created_date = db.Column(db.DateTime, nullable=True)
@@ -97,17 +99,25 @@ class Balance_Record(db.Model):
         return f"<Transaction {self.id}>"
 
 
+# Authentication and Authorization
 @auth.verify_password
 def verify_password(username, password):
     user = User.query.filter_by(email=username).first()
-    # if not user:
-    #     return {"message": "Unauthorized"}, 401
-    # raise Exception({"message": "Unauthorized"}, 401)
+
+    # user with that email not found
+    if not user:
+        return False
+
+    # check password
     is_valid = bcrypt.check_password_hash(user.password, password)
-    if user and is_valid:
+
+    # password correct
+    if is_valid:
         return user
-    # else:
-    #     return {"message": "Forbidden"}, 403
+
+    # password incorrect
+    else:
+        return False
 
 
 @auth.get_user_roles
@@ -116,11 +126,24 @@ def get_user_roles(user):
     return roles
 
 
+@auth.error_handler
+def error_handlers(code):
+    # handle if user not exists
+    if code == 401:
+        return {"success": False, "message": "Unauthorized", "data": {}}, code
+
+    # handle if user with specified role has no right to access
+    elif code == 403:
+        return {"success": False, "message": "Forbidden", "data": {}}, code
+
+
+# Routes
 @app.get("/")
 def welcome():
     return {"success": True, "message": "Welcome to Coffee Shop API", "data": {}}
 
 
+# show all users
 @app.get("/users")
 @auth.login_required(role="admin")
 def get_users():
@@ -157,7 +180,7 @@ def add_user():
     return {"success": True, "message": "Account successfully created", "data": {}}, 201
 
 
-# change name or password
+# change name or password of member or admin
 @app.put("/user/update")
 @auth.login_required()
 def update_user():
@@ -165,6 +188,8 @@ def update_user():
     user = auth.current_user()
 
     user.name = data.get("name", user.name)
+
+    # handle to change password
     if "new_password" in data.keys():
         is_valid = bcrypt.check_password_hash(user.password, data["old_password"])
         if is_valid:
@@ -172,6 +197,12 @@ def update_user():
                 "utf-8"
             )
             user.password = hash_pw
+        else:
+            return {
+                "success": False,
+                "message": "Incorrect old password",
+                "data": {},
+            }, 400
     db.session.commit()
     return {"success": True, "message": "Account data updated", "data": {}}, 200
 
@@ -206,7 +237,7 @@ def get_all_menu():
 
 # show a menu details
 @app.get("/menu/<int:m_id>")
-@auth.login_required(role=["cashier", "admin"], optional=True)
+@auth.login_required(role=["member", "admin"], optional=True)
 def get_menu(m_id):
     menu = Menu.query.get(m_id)
     details = {
@@ -260,7 +291,7 @@ def update_menu(m_id):
 
 # update menu stock
 @app.put("/menu/stock/<int:m_id>")
-@auth.login_required(role=["admin", "cashier"])
+@auth.login_required(role="admin")
 def update_menu_stock(m_id):
     data = request.get_json()
     menu = Menu.query.get(m_id)
@@ -295,29 +326,25 @@ def menu_search():
 
 
 # create order
-@app.post("/order/member")
-@auth.login_required(role=["cashier", "member"])
-def create_order_member():
-    active_orders = Order.query.filter_by(status="created").count()
-    if active_orders > 10:
-        return {
-            "success": False,
-            "message": "We apologize, our service is busy at the moment 🙏🏻 Please kindly wait 😊",
-            "data": {},
-        }, 400
+@app.post("/order/create")
+@auth.login_required(role="member")
+def create_order():
     items = request.get_json()["order_items"]
     member = auth.current_user()
     new_order = Order(
         user_id=member.id,
         customer_name=member.name,
-        status="created",
         created_date=datetime.now(),
     )
-    db.session.add(new_order)
-    db.session.commit()
     total_bill = 0
     for item in items:
         menu = Menu.query.get(item["menu_id"])
+        if item["quantity"] > menu.stock:
+            return {
+                "success": False,
+                "message": "Item quantity exceeds available stock",
+                "data": {"order_item": menu.name, "stock": menu.stock},
+            }, 400
         new_item = Order_Items(
             order_id=new_order.id,
             menu_id=item["menu_id"],
@@ -327,22 +354,98 @@ def create_order_member():
         total_bill += menu.price * item["quantity"]
         new_order.order_items.append(new_item)
     new_order.total_bill = total_bill
+    active_orders = Order.query.filter_by(status="created").count()
+    if active_orders >= 2:
+        new_order.status = "waiting-list"
+        response_message = (
+            "Order successfully created. We apologize, your order is in waiting list"
+        )
+    else:
+        new_order.status = "in-process"
+        response_message = "Order successfully created"
+    db.session.add(new_order)
+    db.session.commit()
+    if member.balance < total_bill:
+        return {
+            "success": False,
+            "message": "Unsufficient balance",
+            "data": {},
+        }, 400
+    # balance is reduced
+    member.balance -= total_bill
+
+    # insert balance transaction
+    new_record = Balance_Record(
+        user_id=member.id,
+        member_name=member.name,
+        order_id=new_order.id,
+        nominal=total_bill,
+        completed_date=datetime.now(),
+        status="completed",
+        type="payment",
+    )
+    db.session.add(new_record)
     db.session.commit()
     return {
         "success": True,
-        "message": "Order created",
+        "message": response_message,
         "data": {"total_bill": total_bill, "order_id": new_order.id},
     }, 201
 
 
 # order details
-@app.get("/order/<int:o_id>")
-@auth.login_required(role=["member", "cashier"])
+@app.get("/orders")
+@auth.login_required(role="admin")
+def get_orders():
+    args = request.args
+    # add row number in query
+    row_number = func.row_number().over(
+        partition_by=Order.status, order_by=Order.created_date
+    )
+    q = db.session.query(Order).add_columns(row_number)
+
+    # can only filter by either "in-progress" or "waiting-list" status
+    # if filter status is omitted, it will result all orders including cancelled ones
+    if "status" in args.keys():
+        q = q.filter_by(status=args["status"])
+
+    # queries in the form of list of tuples => [(order1, numb1), (order2, numb2)]
+    queries = q.all()
+    result = [
+        {
+            "order_id": order.id,
+            "created_at": order.created_date,
+            "order_number": number,
+            "items": [
+                {"name": item.menu_name, "qty": item.quantity}
+                for item in order.order_items
+            ],
+            "total_bill": order.total_bill,
+            "member_name": order.customer_name,
+            "status": order.status,
+        }
+        for (order, number) in queries
+    ]
+    return {
+        "success": True,
+        "message": "Data retrieved",
+        "data": {"orders": result},
+    }, 200
+
+
+# order details
+@app.get("/order/details/<int:o_id>")
+@auth.login_required(role="member")
 def get_order(o_id):
-    # order = Order.query.get(o_id)
-    order = db.session.get(Order, o_id)
+    row_number = func.row_number().over(
+        partition_by=Order.status, order_by=Order.created_date
+    )
+    query = db.session.query(Order).add_columns(row_number).filter_by(id=o_id).first()
+    order = query[0]
+    number = query[1]
     details = {
         "order_id": order.id,
+        "order_number": number,
         "created_at": order.created_date,
         "items": [
             {"name": item.menu_name, "qty": item.quantity} for item in order.order_items
@@ -358,15 +461,14 @@ def get_order(o_id):
 
 
 # complete order
-@app.put("/order/member/<int:o_id>")
-@auth.login_required(role="member")
-def complete_order_member(o_id):
-    user = auth.current_user()
+@app.put("/order/complete/<int:o_id>")
+@auth.login_required(role="admin")
+def complete_order(o_id):
     order = Order.query.get(o_id)
-    if user.balance < order.total_bill:
+    if order.status == "waiting-list":
         return {
             "success": False,
-            "message": "Unsufficient balance",
+            "message": "Order is still in waiting-list",
             "data": {},
         }, 400
     order.status = "completed"
@@ -377,19 +479,14 @@ def complete_order_member(o_id):
         menu = Menu.query.get(item.menu_id)
         menu.stock -= item.quantity
 
-    # reduce balance
-    user.balance -= order.total_bill
-
-    # insert balance transaction
-    new_record = Balance_Record(
-        user_id=user.id,
-        order_id=order.id,
-        nominal=order.total_bill,
-        completed_date=datetime.now(),
-        status="completed",
-        type="payment",
+    # change the waiting-list into in-process
+    new_active_order = (
+        Order.query.filter_by(status="waiting-list")
+        .order_by(Order.created_date)
+        .limit(1)
+        .all()[0]
     )
-    db.session.add(new_record)
+    new_active_order.status = "in-process"
     db.session.commit()
     return {
         "success": True,
@@ -399,25 +496,27 @@ def complete_order_member(o_id):
 
 
 # cancel order
-@app.delete("/order/member/<int:o_id>")
+@app.put("/order/cancel/<int:o_id>")
 @auth.login_required(role="member")
-def cancel_order_member(o_id):
+def cancel_order(o_id):
     order = Order.query.get(o_id)
+    if order.status != "waiting-list":
+        return {
+            "success": False,
+            "message": "Order cannot be cancelled",
+            "data": {},
+        }, 400
     user = auth.current_user()
     order.status = "cancelled"
     order.cancelled_date = datetime.now()
 
-    # re-stock
-    for item in order.order_items:
-        menu = Menu.query.get(item.menu_id)
-        menu.stock += item.quantity
-
     # refund
-    user.balance += 0.8 * order.total_bill
+    user.balance += order.total_bill
 
     # insert balance transaction
     new_record = Balance_Record(
         user_id=user.id,
+        member_name=user.name,
         order_id=order.id,
         nominal=0.8 * order.total_bill,
         completed_date=datetime.now(),
@@ -447,6 +546,7 @@ def create_top_up():
     user = auth.current_user()
     new_record = Balance_Record(
         user_id=user.id,
+        member_name=user.name,
         nominal=data["nominal"],
         created_date=datetime.now(),
         status="created",
@@ -500,31 +600,9 @@ def show_top_menu():
     }, 200
 
 
-@app.get("/top5users")
+@app.get("/users/top5/spend")
 @auth.login_required(role=["admin", "cashier"])
-def show_top_user():
-    # users = (
-    #     db.session.query(
-    #         Order.customer_name, func.count(Order.customer_name).label("times")
-    #     )
-    #     .filter(Order.status == "completed")
-    #     .group_by(Order.customer_name)
-    #     .order_by(func.count(Order.customer_name).desc())
-    #     .limit(5)
-    # )
-    # return {
-    #     "success": True,
-    #     "message": "Data found",
-    #     "data": {
-    #         "users": [
-    #             {
-    #                 "name": user.customer_name,
-    #                 "ordered_times": user.times,
-    #             }
-    #             for user in users
-    #         ]
-    #     },
-    # }, 200
+def show_top_user_order():
     users = (
         db.session.query(Order.customer_name, func.sum(Order.total_bill).label("bill"))
         .filter(Order.status == "completed")
@@ -540,6 +618,32 @@ def show_top_user():
                 {
                     "name": user.customer_name,
                     "bill_sum": user.bill,
+                }
+                for user in users
+            ]
+        },
+    }, 200
+
+
+@app.get("/users/top5/order")
+def show_top_user_spend():
+    users = (
+        db.session.query(
+            Order.customer_name, func.count(Order.customer_name).label("times")
+        )
+        .filter(Order.status == "completed")
+        .group_by(Order.customer_name)
+        .order_by(func.count(Order.customer_name).desc())
+        .limit(5)
+    )
+    return {
+        "success": True,
+        "message": "Data found",
+        "data": {
+            "users": [
+                {
+                    "name": user.customer_name,
+                    "ordered_times": user.times,
                 }
                 for user in users
             ]
