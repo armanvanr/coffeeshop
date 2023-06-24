@@ -87,7 +87,7 @@ class Balance_Record(db.Model):
 
     id = db.Column(db.Integer, autoincrement=True, primary_key=True, index=True)
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    member_name = db.Column(db.String, nullable=True)
+    member_name = db.Column(db.String, nullable=False)
     order_id = db.Column(db.Integer, db.ForeignKey("order.id"), nullable=True)
     nominal = db.Column(db.Integer, nullable=False)
     created_date = db.Column(db.DateTime, nullable=True)
