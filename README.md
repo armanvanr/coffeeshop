@@ -32,7 +32,7 @@ $ git clone https://github.com/armanvanr/coffeeshop.git
     $ pip install -r requirements.txt
     ```
 3. Setup Database Configurations
- 1. Environment variables
+ - Environment variables
     In the root directory, create a `.env` file containing `USER_NAME` and `PASSWORD` of database engine
     ```
     # .env
@@ -50,7 +50,7 @@ $ git clone https://github.com/armanvanr/coffeeshop.git
     db_name = coffeeshop
     ....
     ```
- 2. Setup Database URI
+ - Setup Database URI
     Create a new database in the PGAdmin and put the database name at the end of URI `app.config["SQLALCHEMY_DATABASE_URI"]`
     ```
     # app.py
@@ -59,15 +59,15 @@ $ git clone https://github.com/armanvanr/coffeeshop.git
     ....
     ```
 4. Migrate your application by running command
- 1. Initiate Migration
+ - Initiate Migration
     ```
     $ flask db init
     ```
- 2. Add a new migration
+ - Add a new migration
     ```
     $ flask db migrate
     ```
- 3. Upgrade the migration
+ - Upgrade the migration
     ```
     $ flask db upgrade
     ```
