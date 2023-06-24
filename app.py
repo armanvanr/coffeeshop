@@ -146,7 +146,7 @@ def welcome():
 
 
 # show all users
-@app.get("/users")
+@app.get("/users/all")
 @auth.login_required(role="admin")
 def get_users():
     users = [
@@ -210,7 +210,7 @@ def update_user():
 
 
 # show all in-stock menu
-@app.get("/menu")
+@app.get("/menu/all")
 def get_all_menu():
     drinks = [
         {
@@ -413,7 +413,7 @@ def create_order():
 
 
 # see all waiting-list or in-process orders
-@app.get("/orders")
+@app.get("/orders/created")
 @auth.login_required(role="admin")
 def get_orders():
     args = request.args
@@ -600,7 +600,7 @@ def complete_top_up(b_id):
 
 
 # show top 5 menu items ordered the most
-@app.get("/top5menu")
+@app.get("/menu/top5")
 @auth.login_required(role="member")
 def show_top_menu():
     menu_items = (
