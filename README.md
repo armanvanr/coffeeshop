@@ -19,15 +19,15 @@ Coffeeverse is a RESTful API server built with Flask. Coffeeverse was designed a
 $ git clone https://github.com/armanvanr/coffeeshop.git
 ```
 2. Install the required modules
- 1. Create virtual environment (if using VSCode)
+ - Create virtual environment (if using VSCode)
     ```
     python.exe -m venv yourvenvname
     ```
- 2. Activate venv
+ - Activate venv
     ```
     yourvenvname\Scripts\activate
     ```
- 3. Install the requirement
+ - Install the requirement
     ```
     $ pip install -r requirements.txt
     ```
