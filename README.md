@@ -32,7 +32,7 @@ yourvenvname\Scripts\activate
 $ pip install -r requirements.txt
 ```
 3. Setup Database Configurations
- - Environment variables
+ - Environment variables <br/>
     In the root directory, create a `.env` file containing `USER_NAME` and `PASSWORD` of database engine
 ```dosini
 # .env
@@ -50,7 +50,7 @@ db_password = environ["PASSWORD"]
 db_name = coffeeshop
 ...
 ```
- - Setup Database URI
+ - Database URI <br/>
     Create a new database in the PGAdmin and put the database name at the end of URI `app.config["SQLALCHEMY_DATABASE_URI"]`
 ```python
 # app.py
@@ -59,7 +59,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = f"postgresql://{db_username}:{db_passwor
 ...
 ```
 4. Migrate your application by running command
- - Initiate Migration
+ - Initiate migration
 ```bash
 $ flask db init
 ```
@@ -77,90 +77,25 @@ $ flask run
 ```
 
 ## API Endpoints
-
-## GET
-`GET` [/users/all](#get-usersall) <br/>
-`GET` [/users/top5/spend](#get-userstop5spend) <br/>
-`GET` [/users/top5/order](#get-userstop5order) <br/>
-`GET` [/menu/all](#get-menu) <br/>
-`GET` [/menu/id](#get-menuid) <br/>
-`GET` [/menu/search](#get-menusearch) <br/>
-`GET` [/menu/lowstock](#get-menulowstock) <br/>
-`GET` [/menu/top5](#get-menutop5) <br/>
-`GET` [/orders/created](#get-orderscreated) <br/>
-`GET` [/order/details/id](#get-orderdetailsid) <br/>
-
-## POST
-`POST` [/user](#post-user) <br/>
-`POST` [/menu](#post-menu) <br/>
-`POST` [/order/create](#post-ordercreate) <br/>
-`POST` [/balance/topup](#post-balancetopup) <br/>
-
-## PUT
-`PUT` [/user/update](#put-userupdate) <br/>
-`PUT` [/menu/id](#put-menuid) <br/>
-`PUT` [/menu/stock/id](#put-stockid) <br/>
-`PUT` [/order/complete/id](#put-ordercompleteid) <br/>
-`PUT` [/order/cancel/id](#put-ordercancelid) <br/>
-`PUT` [/balance/topup/id](#put-balancetopupid) <br/>
-
-### GET /users/all
-Show all users. Can only be accessed by `admins`.
-
-### GET /users/top5/spend
-Show the top 5 users based on spend. Can only be accessed by `admins`.
-
-### GET /users/top5/order
-Show the top 5 users based on order count. Can only be accessed by `admins`.
-
-### GET /menu/all
-Show all menu items. Can be accessed by `non-members`.
-
-### GET /menu/id
-Show menu item by ID. Can be accessed by `members`.
-
-### GET /menu/search
-Search for menu items. Can be accessed by `non-members`.
-
-### GET /menu/lowstock
-Show menu items with low stock. Can be accessed by `members`.
-
-### GET /menu/top5
-Show the top 5 menu items. Can be accessed by `non-members`.
-
-### GET /orders/created
-Show all orders created. Can only be accessed by `admins`.
-
-### GET /order/details/id
-Show order details by ID. Can only be accessed by `admins`.
-
-### POST /user
-Create a new user. Can be accessed by `members`.
-
-### POST /menu
-Create a new menu item. Can be accessed by `members`.
-
-### POST /order/create
-Create a new order. Can be accessed by `members`.
-
-### POST /balance/topup
-Top up balance. Can be accessed by `members`.
-
-### PUT /user/update
-Update user information. Can be accessed by `members`.
-
-### PUT /menu/id
-Update menu item by ID. Can be accessed by `members`.
-
-### PUT /menu/stock/id
-Update menu item stock by ID. Can be accessed by `members`.
-
-### PUT /order/complete/id
-Complete order by ID. Can only be accessed by `admins`.
-
-### PUT /order/cancel/id
-Cancel order by ID. Can only be accessed by `admins`.
-
-### PUT /balance/topup/id
-Top up balance by ID. Can be accessed by `members`.
-
+| Access               | Feature                    | Description                                                                                                                                                                          | Method | URL                  | Request Body                                      | Query |
+| -------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | -------------------- | ------------------------------------------------- | ----- |
+| non-registered users | Register new user          | register a new member/admin                                                                                                                                                          | POST   | /user                | name, email, password, role                       |       |
+| member, admin        | Update user data           | update user name or password                                                                                                                                                         | PUT    | /user/<id>           | name, email, password                             |       |
+| admin                | Show all users             | show user details (name, email, balance)                                                                                                                                             | GET    | /users/all           |                                                   |       |
+| admin                | Show top 5 customers order | get 5 users who create orders the most, sort descending                                                                                                                              | GET    | /users/top5/order    |                                                   |       |
+| admin                | Show top 5 customers spend | Users who spend money the most, sort descending                                                                                                                                      | GET    | /users/top5/spend    |                                                   |       |
+| admin                | Add new menu               | name, description, price                                                                                                                                                             | POST   | /menu                | name, description, price                          |       |
+|                      | Get all menu               | Only display menu that is in-stock by default                                                                                                                                        | GET    | /menu/all            |                                                   | name  |
+|                      | Show top 5 menu            | Ordered most ordered                                                                                                                                                                 | GET    | /menu/top5           |                                                   |       |
+|                      | Search menu                | Only display menu that is in-stock by default                                                                                                                                        | GET    | /menu/search         |                                                   | name  |
+| member, admin        | Show menu details          | Show details of specific menu                                                                                                                                                        | GET    | /menu/<id>           |                                                   |       |
+| admin                | Show lowstock menu         | get all menu items whose stock is 10 or less                                                                                                                                         | GET    | /menu/lowstock       |                                                   |       |
+| admin                | Update menu stock          | update menu stock                                                                                                                                                                    | PUT    | /menu/<id>           | stock                                             |       |
+| admin                | Update menu data           | update menu (name, description, image, price)                                                                                                                                        | PUT    | /menu/<id>           | name, description, price                          |       |
+| member               | Create order               | Check if balance exceeds total bill.<br>Before create, re-check if stock is still available.<br>Max only 10 active orders can be served by shop, otherwise order is in waiting list. | POST   | /order/create        | menu: {menu_item:quantity}, user_id,              |       |
+| admin                | Show all created orders    | Show created orders (waiting-list or in-process) ordered by created date                                                                                                             | GET    | /orders              | ?status=in-process,<br>OR<br>?status=waiting-list |       |
+| member               | Show order details         | Show total bills, ordered items                                                                                                                                                      | GET    | /order/details/<id>  |                                                   |       |
+| admin                | Complete order             | Stock is decreased, change the oldest waiting-list to in-process                                                                                                                     | PUT    | /order/complete/<id> | status: completed,<br>reduce stock                |       |
+| member               | Cancel order               | delete order, autorefund                                                                                                                                                             | PUT    | /order/cancel/<id>   | status: cancelled,<br>add stock                   |       |
+| member               | Create balance top up      | send money to be kept by shop. Minimum nominal 10000                                                                                                                                 | POST   | /balance/topup       | nominal: integer value                            |       |
+| admin                | Completed balance top up   | approved by admin                                                                                                                                                                    | PUT    | /balance/topup/<id>  |                                                   |       |
