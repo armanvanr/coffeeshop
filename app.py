@@ -226,7 +226,7 @@ def show_top_user_order():
         "success": True,
         "message": "Data found",
         "data": {
-            "users": [
+            "members": [
                 {
                     "id": user.id,
                     "name": user.customer_name,
@@ -253,7 +253,7 @@ def show_top_user_spend():
         "success": True,
         "message": "Data found",
         "data": {
-            "users": [
+            "members": [
                 {
                     "id": user.id,
                     "name": user.customer_name,
@@ -331,7 +331,7 @@ def show_top_menu():
                 {
                     "name": item.menu_name,
                     "qty": item.qty,
-                    #   "id": item.id
+                      "id": item.id
                 }
                 for item in menu_items
             ]
