@@ -455,8 +455,8 @@ def create_order():
         total_bill += menu.price * item["quantity"]
         new_order.order_items.append(new_item)
     new_order.total_bill = total_bill
-    active_orders = Order.query.filter_by(status="created").count()
-    if active_orders == 10:
+    active_orders = Order.query.filter_by(status="in-process").count()
+    if active_orders >= 10:
         new_order.status = "waiting-list"
         response_message = (
             "Order successfully created. We apologize, your order is in waiting list"
