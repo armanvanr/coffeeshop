@@ -1,5 +1,6 @@
 # Coffeeverse API Documentation
-
+> *"Coffeeverse, explore the flavor across the multiverse"*
+> *Coffeeverse, explore the flavor across the multiverse*
 Coffeeverse is a RESTful API server built with Flask. Coffeeverse was designed as a mini project to complete the backend course held by Makers Institute.
 
 ## Entity Relationship Diagram (ERD)
