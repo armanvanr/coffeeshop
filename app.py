@@ -1,18 +1,21 @@
 from flask import Flask, request
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from dotenv import load_dotenv
 from os import environ
 from flask_migrate import Migrate
 from flask_bcrypt import Bcrypt
 from flask_httpauth import HTTPBasicAuth
+from flask_cors import CORS
 from datetime import datetime
+import json
 
 load_dotenv()
 db_username = environ["USER_NAME"]
 db_password = environ["PASSWORD"]
 
 app = Flask(__name__)
+CORS(app)
 app.config[
     "SQLALCHEMY_DATABASE_URI"
 ] = f"postgresql://{db_username}:{db_password}@localhost:5432/coffeeshop"
@@ -33,6 +36,7 @@ class User(db.Model):
     password = db.Column(db.String, nullable=False)
     balance = db.Column(db.Integer, nullable=False, default=0)
     role = db.Column(db.String, nullable=False)
+    cart = db.Column(db.String, nullable=True)
 
     def __repr__(self):
         return f"<User {self.id}>"
@@ -145,8 +149,43 @@ def welcome():
     return {"success": True, "message": "Welcome to Coffee Shop API", "data": {}}
 
 
+# user login
+@app.post("/user/login")
+def login():
+    username = request.authorization["username"]
+    password = request.authorization["password"]
+
+    user = User.query.filter_by(email=username).first()
+
+    # user with that email not found, call Error Auth Handler
+    if not user:
+        return {"success": False, "message": "User not found", "data": {}}, 404
+
+    # check password
+    is_valid = bcrypt.check_password_hash(user.password, password)
+
+    # password correct, call Authorization
+    if is_valid:
+        cart = json.loads(user.cart)["cartData"]
+        return {
+            "success": True,
+            "message": "User found",
+            "data": {
+                "name": user.name,
+                "email": user.email,
+                "balance": user.balance,
+                "cart": cart,
+                "role": user.role,
+            },
+        }, 200
+
+    # password incorrect, call Error Auth Handler
+    else:
+        return {"success": False, "message": "Unauthorized", "data": {}}, 401
+
+
 # register a new user
-@app.post("/user")
+@app.post("/user/register")
 def add_user():
     data = request.get_json()
     user = User.query.filter_by(email=data["email"]).first()
@@ -158,10 +197,23 @@ def add_user():
         email=data["email"],
         password=hash_pw,
         role=data["role"],
+        cart=json.dumps({"cartData": []}),
     )
     db.session.add(new_user)
     db.session.commit()
-    return {"success": True, "message": "Account successfully created", "data": {}}, 201
+    return {"success": True, "message": "Account created successfully", "data": {}}, 201
+
+
+# log out and save cart data
+@app.put("/user/logout")
+def logout():
+    data = request.get_json()
+    email = data["userData"]["email"]
+    user = db.session.query(User).filter_by(email=email).first()
+    user.cart = json.dumps({"cartData": data["cartData"]})
+    db.session.commit()
+
+    return {"success": True, "message": "Logged out", "data": {}}, 200
 
 
 # change name or password of member or admin
@@ -228,7 +280,7 @@ def show_top_user_order():
         "data": {
             "members": [
                 {
-                    "id": user.id,
+                    # "id": user.id,
                     "name": user.customer_name,
                     "ordered_times": user.times,
                 }
@@ -255,7 +307,7 @@ def show_top_user_spend():
         "data": {
             "members": [
                 {
-                    "id": user.id,
+                    # "id": user.id,
                     "name": user.customer_name,
                     "bill_sum": user.bill,
                 }
@@ -289,17 +341,21 @@ def add_menu():
 def get_all_menu():
     drinks = [
         {
-            "name": menu.name,
             "id": menu.id,
             "img_url": menu.img_url,
+            "name": menu.name,
+            "desc": menu.desc,
+            "price": menu.price,
         }
         for menu in Menu.query.filter(Menu.category == "drinks", Menu.stock > 0)
     ]
     foods = [
         {
-            "name": menu.name,
             "id": menu.id,
             "img_url": menu.img_url,
+            "name": menu.name,
+            "desc": menu.desc,
+            "price": menu.price,
         }
         for menu in Menu.query.filter(Menu.category == "foods", Menu.stock > 0)
     ]
@@ -313,28 +369,57 @@ def get_all_menu():
 # show top 5 menu items ordered the most
 @app.get("/menu/top5")
 def show_top_menu():
-    menu_items = (
+    base_query = (
         db.session.query(
-            Order_Items.menu_name, func.sum(Order_Items.quantity).label("qty")
+            func.sum(Order_Items.quantity).label("qty"),
+            Menu.name,
+            Menu.desc,
+            Menu.price,
+            Menu.img_url,
         )
-        .join(Order, Order.id == Order_Items.order_id)
-        .filter(Order.status == "completed")
-        .group_by(Order_Items.menu_name)
+        .join(
+            Order,
+            Order.id == Order_Items.order_id,
+        )
+        .join(Menu, Order_Items.menu_id == Menu.id)
+    )
+    drink_items = (
+        base_query.filter(Order.status == "completed", Menu.category == "drinks")
+        .group_by(Menu.name, Menu.desc, Menu.price, Menu.img_url)
         .order_by(func.sum(Order_Items.quantity).desc())
         .limit(5)
     )
+    food_items = (
+        base_query.filter(Order.status == "completed", Menu.category == "foods")
+        .group_by(Menu.name, Menu.desc, Menu.price, Menu.img_url)
+        .order_by(func.sum(Order_Items.quantity).desc())
+        .limit(5)
+    )
+
     return {
         "success": True,
         "message": "Data found",
         "data": {
-            "menu": [
+            "drinks": [
                 {
-                    "name": item.menu_name,
+                    "name": item.name,
+                    "desc": item.desc,
+                    "price": item.price,
+                    "img_url": item.img_url,
                     "qty": item.qty,
-                      "id": item.id
                 }
-                for item in menu_items
-            ]
+                for item in drink_items
+            ],
+            "foods": [
+                {
+                    "name": item.name,
+                    "desc": item.desc,
+                    "price": item.price,
+                    "img_url": item.img_url,
+                    "qty": item.qty,
+                }
+                for item in food_items
+            ],
         },
     }, 200
 
@@ -342,15 +427,17 @@ def show_top_menu():
 # search menu
 @app.get("/menu/search")
 def menu_search():
-    args = request.args
-    q = Menu.query
-    if "name" in args.keys():
-        q = q.filter(Menu.name.ilike(f"%{args['name']}%"))
-    if "desc" in args.keys():
-        q = q.filter(Menu.desc.ilike(f"%{args['desc']}%"))
-    menu_list = q.all()
+    keyword = request.args["keyword"]
+    menu_list = Menu.query.filter(or_(Menu.name.ilike(f"%{keyword}%"), Menu.desc.ilike(f"%{keyword}%"))).order_by(Menu.category).all()
     results = [
-        {"name": menu.name, "id": menu.id, "img_url": menu.img_url, "desc": menu.desc}
+        {
+            "id": menu.id,
+            "name": menu.name,
+            "desc": menu.desc,
+            "price": menu.price,
+            "img_url": menu.img_url,
+            "category": menu.category
+        }
         for menu in menu_list
         if menu.stock > 0
     ]
@@ -427,10 +514,12 @@ def update_menu(m_id):
 
 # create order
 @app.post("/order/create")
-@auth.login_required(role="member")
+# @auth.login_required(role="member")
 def create_order():
     items = request.get_json()["order_items"]
-    member = auth.current_user()
+    # member = auth.current_user()
+    member_email = request.get_json()["user_data"]["email"]
+    member = db.session.query(User).filter_by(email=member_email).first()
     new_order = Order(
         user_id=member.id,
         customer_name=member.name,
@@ -459,13 +548,13 @@ def create_order():
     if active_orders >= 10:
         new_order.status = "waiting-list"
         response_message = (
-            "Order successfully created. We apologize, your order is in waiting list"
+            "We apologize, your order is in waiting list"
         )
     else:
         new_order.status = "in-process"
-        response_message = "Order successfully created"
+        response_message = "Your order is being processed"
     db.session.add(new_order)
-    db.session.commit()
+    # db.session.commit()
     if member.balance < total_bill:
         return {
             "success": False,
@@ -486,7 +575,7 @@ def create_order():
         type="payment",
     )
     db.session.add(new_record)
-    db.session.commit()
+    # db.session.commit()
     return {
         "success": True,
         "message": response_message,
@@ -670,7 +759,11 @@ def create_top_up():
 def get_uncomplete_top_up():
     records = Balance_Record.query.filter_by(type="topup", status="created").all()
     requests = [
-        {"record_id": record.id, "member_name": record.member_name, "nominal": record.nominal}
+        {
+            "record_id": record.id,
+            "member_name": record.member_name,
+            "nominal": record.nominal,
+        }
         for record in records
     ]
     return {
@@ -688,10 +781,10 @@ def complete_top_up(r_id):
     user = User.query.get(record.user_id)
     if record.status == "completed":
         return {
-        "success": False,
-        "message": "Top-up already completed",
-        "data": {},
-    }, 400
+            "success": False,
+            "message": "Top-up already completed",
+            "data": {},
+        }, 400
     user.balance += record.nominal
     record.completed_date = datetime.now()
     record.status = "completed"
