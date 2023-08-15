@@ -183,6 +183,40 @@ def login():
     else:
         return {"success": False, "message": "Unauthorized", "data": {}}, 401
 
+# admin login
+@app.post("/admin/login")
+def admin_login():
+    username = request.authorization["username"]
+    password = request.authorization["password"]
+
+    user = User.query.filter_by(email=username).first()
+
+    # user with that email not found, call Error Auth Handler
+    if not user:
+        return {"success": False, "message": "Data not found", "data": {}}, 404
+
+    # check password
+    is_valid = bcrypt.check_password_hash(user.password, password)
+
+    # password correct, call Authorization
+    if is_valid and user.role == "admin":
+        return {
+            "success": True,
+            "message": "Sign In Successful",
+            "data": {
+                "name": user.name,
+                "email": user.email,
+            },
+        }, 200
+
+    # password corret, but not admin
+    elif is_valid and user.role != "admin":
+        return {"success": False, "message": "You have no access", "data": {}}, 403
+    
+    # password incorrect, call Error Auth Handler
+    else:
+        return {"success": False, "message": "Incorrect password", "data": {}}, 401
+
 
 # register a new user
 @app.post("/user/register")
@@ -218,11 +252,11 @@ def logout():
 
 # change name or password of member or admin
 @app.put("/user/update")
-@auth.login_required(role=["member", "admin"])
+# @auth.login_required(role=["member", "admin"])
 def update_user():
     data = request.get_json()
-    user = auth.current_user()
-
+    # user = auth.current_user()
+    user = db.session.query(User).filter_by(email=data["email"]).first()
     user.name = data.get("name", user.name)
 
     # handle to change password
@@ -263,14 +297,18 @@ def get_users():
 
 # show top 5 users most frequently create orders
 @app.get("/users/top5/order")
-@auth.login_required(role="admin")
+# @auth.login_required(role="admin")
 def show_top_user_order():
     users = (
         db.session.query(
-            Order.customer_name, func.count(Order.customer_name).label("times")
+            Order.customer_name, User.email, func.count(Order.customer_name).label("times")
+        )
+        .join(
+            Order,
+            Order.user_id == User.id,
         )
         .filter(Order.status == "completed")
-        .group_by(Order.customer_name)
+        .group_by(Order.customer_name, User.email)
         .order_by(func.count(Order.customer_name).desc())
         .limit(5)
     )
@@ -282,7 +320,8 @@ def show_top_user_order():
                 {
                     # "id": user.id,
                     "name": user.customer_name,
-                    "ordered_times": user.times,
+                    "email": user.email,
+                    "order_times": user.times,
                 }
                 for user in users
             ]
@@ -292,12 +331,16 @@ def show_top_user_order():
 
 # show top 5 users highest spend
 @app.get("/users/top5/spend")
-@auth.login_required(role="admin")
+# @auth.login_required(role="admin")
 def show_top_user_spend():
     users = (
-        db.session.query(Order.customer_name, func.sum(Order.total_bill).label("bill"))
+        db.session.query(Order.customer_name, User.email, func.sum(Order.total_bill).label("bill"))
+        .join(
+            Order,
+            Order.user_id == User.id,
+        )
         .filter(Order.status == "completed")
-        .group_by(Order.customer_name)
+        .group_by(Order.customer_name, User.email)
         .order_by(func.sum(Order.total_bill).desc())
         .limit(5)
     )
@@ -309,6 +352,7 @@ def show_top_user_spend():
                 {
                     # "id": user.id,
                     "name": user.customer_name,
+                    "email": user.email,
                     "bill_sum": user.bill,
                 }
                 for user in users
@@ -319,7 +363,7 @@ def show_top_user_spend():
 
 # add a new menu
 @app.post("/menu")
-@auth.login_required(role="admin")
+# @auth.login_required(role="admin")
 def add_menu():
     data = request.get_json()
 
@@ -333,12 +377,12 @@ def add_menu():
     )
     db.session.add(new_menu)
     db.session.commit()
-    return {"success": True, "message": "menu added", "data": {}}, 201
+    return {"success": True, "message": "Menu successfully added", "data": {}}, 201
 
 
 # show all in-stock menu
-@app.get("/menu/all")
-def get_all_menu():
+@app.get("/menu/available")
+def get_available_menu():
     drinks = [
         {
             "id": menu.id,
@@ -346,6 +390,7 @@ def get_all_menu():
             "name": menu.name,
             "desc": menu.desc,
             "price": menu.price,
+            "stock": menu.stock
         }
         for menu in Menu.query.filter(Menu.category == "drinks", Menu.stock > 0)
     ]
@@ -356,6 +401,7 @@ def get_all_menu():
             "name": menu.name,
             "desc": menu.desc,
             "price": menu.price,
+            "stock": menu.stock
         }
         for menu in Menu.query.filter(Menu.category == "foods", Menu.stock > 0)
     ]
@@ -363,6 +409,25 @@ def get_all_menu():
         "success": True,
         "message": "Data found",
         "data": {"drinks": drinks, "foods": foods},
+    }, 200
+
+
+@app.get("/menu/all")
+def get_all_menu():
+    menu_list = [
+        {
+            "id": menu.id,
+            "name": menu.name,
+            "price": menu.price,
+            "stock": menu.stock,
+            "category": menu.category
+        }
+        for menu in db.session.query(Menu).order_by(Menu.name).all()
+    ]
+    return {
+        "success": True,
+        "message": "Data found",
+        "data": {"menu_list": menu_list},
     }, 200
 
 
@@ -376,6 +441,8 @@ def show_top_menu():
             Menu.desc,
             Menu.price,
             Menu.img_url,
+            Menu.id,
+            Menu.stock
         )
         .join(
             Order,
@@ -385,50 +452,89 @@ def show_top_menu():
     )
     drink_items = (
         base_query.filter(Order.status == "completed", Menu.category == "drinks")
-        .group_by(Menu.name, Menu.desc, Menu.price, Menu.img_url)
+        .group_by(Menu.name, Menu.desc, Menu.price, Menu.img_url, Menu.id, Menu.stock)
         .order_by(func.sum(Order_Items.quantity).desc())
         .limit(5)
     )
     food_items = (
         base_query.filter(Order.status == "completed", Menu.category == "foods")
-        .group_by(Menu.name, Menu.desc, Menu.price, Menu.img_url)
+        .group_by(Menu.name, Menu.desc, Menu.price, Menu.img_url, Menu.id)
         .order_by(func.sum(Order_Items.quantity).desc())
         .limit(5)
     )
-
     return {
         "success": True,
         "message": "Data found",
         "data": {
             "drinks": [
                 {
+                    "id": item.id,
                     "name": item.name,
                     "desc": item.desc,
                     "price": item.price,
                     "img_url": item.img_url,
                     "qty": item.qty,
+                    "stock": item.stock
                 }
                 for item in drink_items
             ],
             "foods": [
                 {
+                    "id": item.id,
                     "name": item.name,
                     "desc": item.desc,
                     "price": item.price,
                     "img_url": item.img_url,
                     "qty": item.qty,
+                    "stock": item.stock
                 }
                 for item in food_items
             ],
         },
     }, 200
 
+@app.get("/menu/top5/order")
+def show_top_menu_order():
+    menu_list = (
+        db.session.query(
+            Menu.name, Menu.price, func.sum(Order_Items.quantity).label("times")
+        )
+        .join(
+            Order,
+            Order.id == Order_Items.order_id,
+        )
+        .join(Menu, Order_Items.menu_id == Menu.id)
+        .filter(Order.status == "completed")
+        .group_by(Menu.name, Menu.price,)
+        .order_by(func.sum(Order_Items.quantity).desc())
+        .limit(5)
+    )
+    return {
+        "success": True,
+        "message": "Data found",
+        "data": {
+            "menu_list": [
+                {
+                    "name": item.name,
+                    "price": item.price,
+                    "times": item.times,
+                }
+                for item in menu_list
+            ],
+        },
+    }, 200
 
 # search menu
 @app.get("/menu/search")
 def menu_search():
     keyword = request.args["keyword"]
-    menu_list = Menu.query.filter(or_(Menu.name.ilike(f"%{keyword}%"), Menu.desc.ilike(f"%{keyword}%"))).order_by(Menu.category).all()
+    menu_list = (
+        Menu.query.filter(
+            or_(Menu.name.ilike(f"%{keyword}%"), Menu.desc.ilike(f"%{keyword}%"))
+        )
+        .order_by(Menu.category)
+        .all()
+    )
     results = [
         {
             "id": menu.id,
@@ -436,7 +542,8 @@ def menu_search():
             "desc": menu.desc,
             "price": menu.price,
             "img_url": menu.img_url,
-            "category": menu.category
+            "category": menu.category,
+            "stock": menu.stock
         }
         for menu in menu_list
         if menu.stock > 0
@@ -451,14 +558,15 @@ def menu_search():
 # show a menu details
 @app.get("/menu/<int:m_id>")
 def get_menu(m_id):
-    menu = Menu.query.get(m_id)
+    menu = db.session.query(Menu).get(m_id)
     details = {
         "name": menu.name,
         "id": menu.id,
         "img_url": menu.img_url,
         "price": menu.price,
-        "description": menu.desc,
+        "desc": menu.desc,
         "stock": menu.stock,
+        "category": menu.category
     }
 
     return {
@@ -467,23 +575,33 @@ def get_menu(m_id):
         "data": {"details": details},
     }, 200
 
+# show a menu details
+@app.get("/menu/stock/<int:m_id>")
+def get_menu_stock(m_id):
+    menu = db.session.query(Menu).get(m_id)
+    return {
+        "success": True,
+        "message": "Data found",
+        "data": {"stock": menu.stock},
+    }, 200
 
-# show menu items whose stock <= 10
+
+# show menu items order by lowest stock
 @app.get("/menu/lowstock")
-@auth.login_required(role="admin")
+# @auth.login_required(role="admin")
 def get_low_stock():
-    menu = [
+    menu_list = [
         {
             "name": item.name,
-            "id": item.id,
+            "price": item.price,
             "stock": item.stock,
         }
-        for item in Menu.query.filter(Menu.stock <= 10).order_by(Menu.stock)
+        for item in Menu.query.order_by(Menu.stock).limit(5)
     ]
     return {
         "success": True,
         "message": "Data retrieved",
-        "data": {"menu": menu},
+        "data": {"menu_list": menu_list},
     }, 200
 
 
@@ -494,13 +612,13 @@ def update_menu_stock(m_id):
     data = request.get_json()
     menu = Menu.query.get(m_id)
     menu.stock = data.get("stock", menu.stock)
-    db.session.commit()
+    # db.session.commit()
     return {"success": True, "message": "menu stock updated", "data": {}}, 200
 
 
 # update menu data
 @app.put("/menu/<int:m_id>")
-@auth.login_required(role="admin")
+# @auth.login_required(role="admin")
 def update_menu(m_id):
     data = request.get_json()
     menu = Menu.query.get(m_id)
@@ -508,9 +626,29 @@ def update_menu(m_id):
     menu.desc = data.get("desc", menu.desc)
     menu.price = data.get("price", menu.price)
     menu.img_url = data.get("img_url", menu.img_url)
+    menu.stock = data.get("stock", menu.stock)
+    menu.category = data.get("category", menu.category)
     db.session.commit()
     return {"success": True, "message": "menu updated", "data": {}}, 200
 
+# get all order records
+@app.get("/orders/all")
+def get_all_orders():
+    order_list = [
+        {
+            "id": order.id,
+            "customer_name": order.customer_name,
+            "total_bill": order.total_bill,
+            "status": order.status,
+            "created_date": order.created_date
+        }
+        for order in db.session.query(Order).order_by((Order.created_date).desc()).all()
+    ]
+    return {
+        "success": True,
+        "message": "Data found",
+        "data": {"order_list": order_list},
+    }, 200
 
 # create order
 @app.post("/order/create")
@@ -531,7 +669,7 @@ def create_order():
         if item["quantity"] > menu.stock:
             return {
                 "success": False,
-                "message": "Item quantity exceeds available stock",
+                "message": "Quantity of item(s) exceeds available stock",
                 "data": {"order_item": menu.name, "stock": menu.stock},
             }, 400
         new_item = Order_Items(
@@ -546,9 +684,10 @@ def create_order():
     new_order.total_bill = total_bill
     active_orders = Order.query.filter_by(status="in-process").count()
     if active_orders >= 10:
+        waiting_number = Order.query.filter_by(status="waiting-list").count() + 1
         new_order.status = "waiting-list"
         response_message = (
-            "We apologize, your order is in waiting list"
+            f"We apologize, your order is in waiting list number: {waiting_number}"
         )
     else:
         new_order.status = "in-process"
@@ -579,7 +718,11 @@ def create_order():
     return {
         "success": True,
         "message": response_message,
-        "data": {"total_bill": total_bill, "order_id": new_order.id},
+        "data": {
+            "total_bill": total_bill,
+            "order_id": new_order.id,
+            "status": new_order.status,
+        },
     }, 201
 
 
@@ -652,7 +795,7 @@ def get_order(o_id):
 
 # complete order
 @app.put("/order/complete/<int:o_id>")
-@auth.login_required(role="admin")
+# @auth.login_required(role="admin")
 def complete_order(o_id):
     order = Order.query.get(o_id)
     if order.status == "waiting-list":
@@ -679,7 +822,7 @@ def complete_order(o_id):
     if query_waiting_list:
         new_active_order = query_waiting_list[0]
         new_active_order.status = "in-process"
-    db.session.commit()
+    # db.session.commit()
     return {
         "success": True,
         "message": "Order completed",
@@ -689,7 +832,7 @@ def complete_order(o_id):
 
 # cancel order and refund
 @app.put("/order/cancel/<int:o_id>")
-@auth.login_required(role="member")
+# @auth.login_required(role="member")
 def cancel_order(o_id):
     order = Order.query.get(o_id)
     if order.status != "waiting-list":
@@ -698,7 +841,9 @@ def cancel_order(o_id):
             "message": "Order cannot be cancelled",
             "data": {},
         }, 400
-    user = auth.current_user()
+    # user = auth.current_user()
+    data = request.get_json()
+    user = db.session.query(User).filter_by(email=data["userData"]["email"]).first()
     order.status = "cancelled"
     order.cancelled_date = datetime.now()
 

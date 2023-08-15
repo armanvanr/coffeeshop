@@ -13,3 +13,8 @@ UPDATE public.balance_record
 
 SELECT *
 FROM public.user
+
+SELECT date_trunc('day', created_date)
+FROM public.order 
+GROUP BY date_trunc('day', created_date)
+ORDER BY date_trunc('day', created_date) DESC
